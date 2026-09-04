@@ -1,0 +1,17 @@
+# Render.com Blueprint - see https://render.com/docs/blueprint-spec
+#
+# Deploy: on render.com, "New +" -> "Blueprint", connect this repo, Render
+# reads this file and provisions the service automatically (free tier,
+# no payment info required). The bundled sample CSVs (data/wine.csv,
+# data/breast_cancer.csv) are committed to the repo, so no build-time
+# dataset generation is needed.
+services:
+  - type: web
+    name: pca-data-explorer
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app.server:app --chdir . --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7

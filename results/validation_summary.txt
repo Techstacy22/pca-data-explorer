@@ -1,0 +1,37 @@
+VALIDATION REPORT
+==================
+
+Reference implementation: scikit-learn 1.9.0 (sklearn.decomposition.PCA, svd_solver='full')
+Independent implementation: this project's src/pca_explorer/
+
+Dataset: iris (4 features)  shape=(150, 4)
+  components max abs diff:         4.44e-16
+  explained_variance max abs diff: 5.55e-17
+  explained_variance_ratio max abs diff: 6.94e-18
+  transformed scores max abs diff: 2.94e-15
+
+Dataset: wine (13 features)  shape=(178, 13)
+  components max abs diff:         2.63e-14
+  explained_variance max abs diff: 1.14e-13
+  explained_variance_ratio max abs diff: 1.08e-18
+  transformed scores max abs diff: 5.44e-13
+
+Dataset: breast_cancer (30 features)  shape=(569, 30)
+  components max abs diff:         4.17e-14
+  explained_variance max abs diff: 2.27e-13
+  explained_variance_ratio max abs diff: 4.34e-19
+  transformed scores max abs diff: 3.91e-11
+
+Dataset: random gaussian (200x20)  shape=(200, 20)
+  components max abs diff:         2.38e-14
+  explained_variance max abs diff: 7.28e-12
+  explained_variance_ratio max abs diff: 3.05e-16
+  transformed scores max abs diff: 3.50e-12
+
+Dataset: random gaussian (30x100, p>n)  shape=(30, 100)
+  components max abs diff:         2.48e-01
+  explained_variance max abs diff: 2.66e-14
+  explained_variance_ratio max abs diff: 2.71e-16
+  transformed scores max abs diff: 1.58e-13
+
+Reconstruction error curve (wine, all k) max abs diff vs. sklearn: 3.55e-15

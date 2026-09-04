@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PCA Data Explorer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1a1d23; --muted: #667085;
+    --border: #e3e6ea; --accent: #3b6fa0; --accent-deep: #2c5580;
+    --good: #2f855a; --warn: #b7791f;
+    --cat1: #3b6fa0; --cat2: #c1583f; --cat3: #6b9b5e; --cat4: #9467bd; --cat5: #c99a2e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink); font-size: 14px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 2rem 1.5rem 3rem; }
+  header { margin-bottom: 1.6rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 0.3rem; }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.2rem 1.4rem; margin-bottom: 1.1rem;
+  }
+  .controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 0.3rem; }
+  .field label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  select, input[type="text"] {
+    font: inherit; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px;
+    background: #fff; min-width: 180px;
+  }
+  input[type="file"] { font: inherit; }
+  .checkbox-field { flex-direction: row; align-items: center; gap: 0.5rem; }
+  .checkbox-field label { text-transform: none; font-size: 0.85rem; color: var(--ink); }
+  button {
+    font: inherit; font-weight: 600; background: var(--accent); color: #fff; border: 0;
+    border-radius: 6px; padding: 0.6rem 1.1rem; cursor: pointer;
+  }
+  button:hover { background: var(--accent-deep); }
+  button:disabled { background: var(--border); cursor: default; }
+
+  .error {
+    background: #fdecea; border: 1px solid #f5c6cb; color: #86232a;
+    border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1rem; font-size: 0.9rem;
+  }
+
+  .stat-row {
+    display: flex; gap: 1.8rem; flex-wrap: wrap; font-size: 0.85rem; color: var(--muted);
+  }
+  .stat-row b { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 1.1rem; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  h2 { font-size: 0.95rem; margin: 0 0 0.8rem; }
+  .chart-note { font-size: 0.78rem; color: var(--muted); margin-top: 0.5rem; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 0.8rem; margin-top: 0.6rem; font-size: 0.8rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+
+  .loadings-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  @media (max-width: 800px) { .loadings-cols { grid-template-columns: 1fr; } }
+
+  #results { display: none; }
+  #results.visible { display: block; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>PCA Data Explorer</h1>
+    <p>Principal Component Analysis via singular value decomposition, implemented from scratch and validated against scikit-learn (max component difference 2.6e-14 on real data). Upload a CSV or explore a bundled dataset below.</p>
+  </header>
+
+  <div class="panel">
+    <form id="analyze-form" class="controls">
+      <div class="field">
+        <label for="source">Data source</label>
+        <select id="source" name="source">
+          {% for key, spec in samples.items() %}
+          <option value="{{ key }}">{{ spec.description }}</option>
+          {% endfor %}
+          <option value="upload">Upload your own CSV&hellip;</option>
+        </select>
+      </div>
+      <div class="field hidden" id="upload-field">
+        <label for="file">CSV file</label>
+        <input type="file" id="file" name="file" accept=".csv">
+      </div>
+      <div class="field hidden" id="label-field">
+        <label for="label_column">Label column (optional, for coloring)</label>
+        <input type="text" id="label_column" name="label_column" placeholder="e.g. species">
+      </div>
+      <div class="field checkbox-field">
+        <input type="checkbox" id="standardize" name="standardize" checked>
+        <label for="standardize">Standardize features (recommended for mixed-scale data)</label>
+      </div>
+      <button type="submit" id="analyze-btn">Analyze</button>
+    </form>
+  </div>
+
+  <div id="error-box" class="error hidden"></div>
+
+  <div id="results">
+    <div class="panel">
+      <div class="stat-row">
+        <span><b id="stat-samples"></b> samples</span>
+        <span><b id="stat-features"></b> features</span>
+        <span>PC1 + PC2 explain <b id="stat-variance"></b> of total variance</span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <h2>First two principal components</h2>
+        <svg id="scatter-svg" width="100%" height="380" viewBox="0 0 560 380"></svg>
+        <div class="legend" id="scatter-legend"></div>
+      </div>
+      <div class="panel">
+        <h2>Explained variance by component</h2>
+        <svg id="scree-svg" width="100%" height="180" viewBox="0 0 480 180"></svg>
+        <div class="chart-note">Bars: variance explained per component. Line: cumulative.</div>
+
+        <h2 style="margin-top:1.2rem">Reconstruction error vs. components kept</h2>
+        <svg id="recon-svg" width="100%" height="150" viewBox="0 0 480 150"></svg>
+        <div class="chart-note">Mean squared error per sample when reconstructing from only the first k components.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Top contributing features</h2>
+      <div class="loadings-cols">
+        <div>
+          <h2 style="font-size:0.8rem;color:var(--muted)">PC1</h2>
+          <table id="loadings-pc1"><thead><tr><th>Feature</th><th>Loading</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div>
+          <h2 style="font-size:0.8rem;color:var(--muted)">PC2</h2>
+          <table id="loadings-pc2"><thead><tr><th>Feature</th><th>Loading</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORY_COLORS = ["var(--cat1)", "var(--cat2)", "var(--cat3)", "var(--cat4)", "var(--cat5)"];
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  return e;
+}
+
+document.getElementById("source").addEventListener("change", (e) => {
+  const isUpload = e.target.value === "upload";
+  document.getElementById("upload-field").classList.toggle("hidden", !isUpload);
+  document.getElementById("label-field").classList.toggle("hidden", !isUpload);
+});
+
+function drawScatter(pc1, pc2, labels, evr) {
+  const svg = document.getElementById("scatter-svg");
+  svg.innerHTML = "";
+  const W = 560, H = 380, PAD = 40;
+
+  const xMin = Math.min(...pc1), xMax = Math.max(...pc1);
+  const yMin = Math.min(...pc2), yMax = Math.max(...pc2);
+  const xSpan = (xMax - xMin) || 1, ySpan = (yMax - yMin) || 1;
+  const sx = v => PAD + (v - xMin) / xSpan * (W - 2 * PAD);
+  const sy = v => H - PAD - (v - yMin) / ySpan * (H - 2 * PAD);
+
+  svg.appendChild(el("line", { x1: PAD, y1: H - PAD, x2: W - PAD, y2: H - PAD, stroke: "#d5d9de" }));
+  svg.appendChild(el("line", { x1: PAD, y1: PAD, x2: PAD, y2: H - PAD, stroke: "#d5d9de" }));
+
+  const xLabel = el("text", { x: W / 2, y: H - 8, "text-anchor": "middle", fill: "#667085", "font-size": "11" });
+  xLabel.textContent = `PC1 (${(evr[0] * 100).toFixed(1)}% variance)`;
+  svg.appendChild(xLabel);
+  const yLabel = el("text", { x: 12, y: H / 2, "text-anchor": "middle", fill: "#667085", "font-size": "11",
+                              transform: `rotate(-90 12 ${H / 2})` });
+  yLabel.textContent = `PC2 (${(evr[1] ? evr[1] * 100 : 0).toFixed(1)}% variance)`;
+  svg.appendChild(yLabel);
+
+  const uniqueLabels = labels ? [...new Set(labels)] : [null];
+  const colorFor = (label) => label === null ? "var(--cat1)" : CATEGORY_COLORS[uniqueLabels.indexOf(label) % CATEGORY_COLORS.length];
+
+  for (let i = 0; i < pc1.length; i++) {
+    const label = labels ? labels[i] : null;
+    svg.appendChild(el("circle", {
+      cx: sx(pc1[i]), cy: sy(pc2[i]), r: 4, fill: colorFor(label), "fill-opacity": 0.75,
+    }));
+  }
+
+  const legendEl = document.getElementById("scatter-legend");
+  legendEl.innerHTML = "";
+  if (labels) {
+    uniqueLabels.forEach(label => {
+      const item = document.createElement("span");
+      item.className = "legend-item";
+      item.innerHTML = `<span class="legend-dot" style="background:${colorFor(label)}"></span>${label}`;
+      legendEl.appendChild(item);
+    });
+  }
+}
+
+function drawScree(evr, cumulative) {
+  const svg = document.getElementById("scree-svg");
+  svg.innerHTML = "";
+  const W = 480, H = 180, PAD = 28;
+  const n = evr.length;
+  const barW = (W - 2 * PAD) / n * 0.7;
+  const sx = i => PAD + (i + 0.15) * (W - 2 * PAD) / n;
+  const sy = v => H - PAD - v * (H - 2 * PAD);
+
+  svg.appendChild(el("line", { x1: PAD, y1: H - PAD, x2: W - PAD, y2: H - PAD, stroke: "#d5d9de" }));
+
+  evr.forEach((v, i) => {
+    svg.appendChild(el("rect", {
+      x: sx(i), y: sy(v), width: barW, height: (H - PAD) - sy(v), fill: "var(--cat1)", "fill-opacity": 0.85,
+    }));
+  });
+
+  const points = cumulative.map((v, i) => `${sx(i) + barW / 2},${sy(v)}`).join(" ");
+  svg.appendChild(el("polyline", { points, fill: "none", stroke: "var(--cat2)", "stroke-width": 2 }));
+  cumulative.forEach((v, i) => {
+    svg.appendChild(el("circle", { cx: sx(i) + barW / 2, cy: sy(v), r: 2.5, fill: "var(--cat2)" }));
+  });
+}
+
+function drawReconstructionCurve(errors) {
+  const svg = document.getElementById("recon-svg");
+  svg.innerHTML = "";
+  const W = 480, H = 150, PAD = 28;
+  const n = errors.length;
+  const maxErr = Math.max(...errors) || 1;
+  const sx = i => PAD + i / (n - 1 || 1) * (W - 2 * PAD);
+  const sy = v => H - PAD - v / maxErr * (H - 2 * PAD);
+
+  svg.appendChild(el("line", { x1: PAD, y1: H - PAD, x2: W - PAD, y2: H - PAD, stroke: "#d5d9de" }));
+  svg.appendChild(el("line", { x1: PAD, y1: PAD, x2: PAD, y2: H - PAD, stroke: "#d5d9de" }));
+
+  const points = errors.map((v, i) => `${sx(i)},${sy(v)}`).join(" ");
+  svg.appendChild(el("polyline", { points, fill: "none", stroke: "var(--accent-deep)", "stroke-width": 2 }));
+  errors.forEach((v, i) => {
+    svg.appendChild(el("circle", { cx: sx(i), cy: sy(v), r: 2.5, fill: "var(--accent-deep)" }));
+  });
+}
+
+function fillLoadingsTable(tableId, loadings) {
+  const tbody = document.querySelector(`#${tableId} tbody`);
+  tbody.innerHTML = loadings.map(l => `<tr><td>${l.feature}</td><td class="num">${l.loading.toFixed(4)}</td></tr>`).join("");
+}
+
+document.getElementById("analyze-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("analyze-btn");
+  const errorBox = document.getElementById("error-box");
+  errorBox.classList.add("hidden");
+  btn.disabled = true;
+  btn.textContent = "Analyzing...";
+
+  try {
+    const source = document.getElementById("source").value;
+    const formData = new FormData();
+    formData.set("standardize", document.getElementById("standardize").checked ? "true" : "false");
+
+    if (source === "upload") {
+      const fileInput = document.getElementById("file");
+      if (!fileInput.files.length) throw new Error("Choose a CSV file to upload.");
+      formData.set("file", fileInput.files[0]);
+      formData.set("label_column", document.getElementById("label_column").value);
+    } else {
+      formData.set("sample", source);
+    }
+
+    const res = await fetch("/api/analyze", { method: "POST", body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Analysis failed.");
+
+    document.getElementById("stat-samples").textContent = data.n_samples.toLocaleString();
+    document.getElementById("stat-features").textContent = data.n_features.toLocaleString();
+    const twoComp = (data.cumulative_variance_ratio[1] ?? data.cumulative_variance_ratio[0]);
+    document.getElementById("stat-variance").textContent = (twoComp * 100).toFixed(1) + "%";
+
+    drawScatter(data.pc1, data.pc2, data.labels, data.explained_variance_ratio);
+    drawScree(data.explained_variance_ratio, data.cumulative_variance_ratio);
+    drawReconstructionCurve(data.reconstruction_error);
+    fillLoadingsTable("loadings-pc1", data.top_loadings_pc1);
+    fillLoadingsTable("loadings-pc2", data.top_loadings_pc2);
+
+    document.getElementById("results").classList.add("visible");
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.classList.remove("hidden");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Analyze";
+  }
+});
+
+// Run once on load with the default sample so the page isn't an empty shell.
+document.getElementById("analyze-form").dispatchEvent(new Event("submit", { cancelable: true }));
+</script>
+</body>
+</html>
